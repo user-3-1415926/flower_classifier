@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# virtual env
+venv/
+.venv/
+env/
+
+# data (very important)
+data/
+archive/
+metadata/
+
+# models / weights
+models/
+pretrained/
+*.pth
+*.pt
+
+# images (optional, if dataset inside)
+*.jpg
+*.png
+
+# IDE
+.vscode/
+.idea/
+
+# system files
+.DS_Store
+Thumbs.db
+
+# logs
+*.log
+
+# environment
+.env
