@@ -1,39 +1,55 @@
-# Python
+# Python bytecode and caches
 __pycache__/
-*.pyc
-*.pyo
+*.py[cod]
+*.pyc.*
 *.pyd
+*.so
+.Python
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
 
-# virtual env
+# Build and packaging
+build/
+dist/
+site/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# Virtual environments
 venv/
 .venv/
 env/
+ENV/
 
-# data (very important)
+# Notebook and local Python tools
+.ipynb_checkpoints/
+
+# Data and experiment artifacts
 data/
 archive/
 metadata/
-
-# models / weights
 models/
 pretrained/
+results/
 *.pth
 *.pt
+*.onnx
 
-# images (optional, if dataset inside)
-*.jpg
-*.png
+# Logs and local environment files
+*.log
+.env
+.env.*
 
-# IDE
+# IDE and editor settings
 .vscode/
 .idea/
 
-# system files
+# Operating system files
 .DS_Store
 Thumbs.db
-
-# logs
-*.log
-
-# environment
-.env
+desktop.ini

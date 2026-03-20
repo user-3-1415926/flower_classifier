@@ -1,4 +1,3 @@
-import json
 import os
 import sys
 from pathlib import Path
@@ -16,19 +15,69 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 from flower_classifier.config import (  # noqa: E402
     BATCH_SIZE,
     BEST_MODEL_PATH,
-    EPOCHS,
+    CLASSIFIER_DROPOUT,
     HISTORY_PATH,
-    LEARNING_RATE,
     MODEL_DIR,
     NUM_WORKERS,
     PRETRAINED_MODEL_PATH,
+    STAGE1_EPOCHS,
+    STAGE1_LR,
+    STAGE2_EPOCHS,
+    STAGE2_LR,
     TEST_DIR,
     TRAIN_DIR,
 )
 from flower_classifier.model import FlowerVGG19, build_transforms  # noqa: E402
+from flower_classifier.utils import (  # noqa: E402
+    calculate_accuracy,
+    count_correct_predictions,
+    get_device,
+    get_result_dir,
+    save_history_csv,
+    save_history_json,
+    save_summary_json,
+    save_training_curves,
+    set_seed,
+)
+
+
+SEED = 42
+EXPERIMENT_NAME = "flower_vgg19"
+
+
+def run_epoch(model, data_loader, criterion, device, optimizer=None):
+    is_training = optimizer is not None
+    model.train() if is_training else model.eval()
+
+    total_loss = 0.0
+    total_correct = 0
+    total_samples = len(data_loader.dataset)
+
+    context = torch.enable_grad() if is_training else torch.no_grad()
+    with context:
+        for data, label in data_loader:
+            data, label = data.to(device), label.to(device)
+
+            if is_training:
+                optimizer.zero_grad()
+
+            output = model(data)
+            loss = criterion(output, label)
+
+            if is_training:
+                loss.backward()
+                optimizer.step()
+
+            total_loss += loss.item()
+            total_correct += count_correct_predictions(output, label)
+
+    avg_loss = total_loss / len(data_loader)
+    avg_acc = calculate_accuracy(total_correct, total_samples)
+    return avg_loss, avg_acc
 
 
 if __name__ == "__main__":
+    set_seed(SEED)
     train_transform, test_transform = build_transforms()
 
     train_dataset = datasets.ImageFolder(TRAIN_DIR, train_transform)
@@ -53,60 +102,57 @@ if __name__ == "__main__":
         num_workers=NUM_WORKERS,
     )
 
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = get_device()
     print(f"device = {device}")
 
-    vgg19 = FlowerVGG19(class_num, PRETRAINED_MODEL_PATH).to(device)
+    vgg19 = FlowerVGG19(
+        class_num,
+        model_path=PRETRAINED_MODEL_PATH,
+        dropout=CLASSIFIER_DROPOUT,
+    ).to(device)
+    vgg19.freeze_features()
 
-    optimizer = optim.Adam(
-        filter(lambda p: p.requires_grad, vgg19.parameters()),
-        lr=LEARNING_RATE,
+    stage1_optimizer = optim.Adam(
+        vgg19.get_trainable_parameters(),
+        lr=STAGE1_LR,
+    )
+    stage2_optimizer = optim.Adam(
+        vgg19.get_trainable_parameters(),
+        lr=STAGE2_LR,
     )
     criterion = nn.CrossEntropyLoss()
 
     os.makedirs(MODEL_DIR, exist_ok=True)
+    result_dir = get_result_dir(MODEL_DIR, EXPERIMENT_NAME)
 
     history = {"train_loss": [], "test_loss": [], "train_acc": [], "test_acc": []}
     best_test_acc = 0.0
+    total_epochs = STAGE1_EPOCHS + STAGE2_EPOCHS
 
-    for epoch in range(1, EPOCHS + 1):
-        vgg19.train()
-        train_correct = 0
-        train_loss = 0.0
+    for epoch in range(1, total_epochs + 1):
+        if epoch == STAGE1_EPOCHS + 1:
+            vgg19.unfreeze_last_conv_block()
+            stage2_optimizer = optim.Adam(
+                vgg19.get_trainable_parameters(),
+                lr=STAGE2_LR,
+            )
 
-        for batch_idx, (data, label) in enumerate(train_load):
-            data, label = data.to(device), label.to(device)
+        optimizer = stage1_optimizer if epoch <= STAGE1_EPOCHS else stage2_optimizer
+        stage_name = "stage1_classifier" if epoch <= STAGE1_EPOCHS else "stage2_finetune"
 
-            optimizer.zero_grad()
-            output = vgg19(data)
-            loss = criterion(output, label)
-            loss.backward()
-            optimizer.step()
-
-            predict = torch.argmax(output, dim=1)
-            train_correct += (predict == label).sum().item()
-            train_loss += loss.item()
-            print(f"{batch_idx + 1}/{len(train_load)}")
-
-        avg_train_loss = train_loss / len(train_load)
-        avg_train_acc = train_correct / len(train_dataset)
-
-        vgg19.eval()
-        test_loss = 0.0
-        test_correct = 0
-
-        with torch.no_grad():
-            for data, label in test_load:
-                data, label = data.to(device), label.to(device)
-                output = vgg19(data)
-                loss = criterion(output, label)
-
-                test_loss += loss.item()
-                predict = torch.argmax(output, dim=1)
-                test_correct += (predict == label).sum().item()
-
-        avg_test_loss = test_loss / len(test_load)
-        avg_test_acc = test_correct / len(test_dataset)
+        avg_train_loss, avg_train_acc = run_epoch(
+            vgg19,
+            train_load,
+            criterion,
+            device,
+            optimizer=optimizer,
+        )
+        avg_test_loss, avg_test_acc = run_epoch(
+            vgg19,
+            test_load,
+            criterion,
+            device,
+        )
 
         history["train_loss"].append(avg_train_loss)
         history["train_acc"].append(avg_train_acc)
@@ -114,7 +160,7 @@ if __name__ == "__main__":
         history["test_acc"].append(avg_test_acc)
 
         print(
-            f"Epoch {epoch}/{EPOCHS}: "
+            f"Epoch {epoch}/{total_epochs} [{stage_name}]: "
             f"Train Acc: {avg_train_acc:.3f}, Loss: {avg_train_loss:.4f} | "
             f"Test Acc: {avg_test_acc:.3f}, Loss: {avg_test_loss:.4f}"
         )
@@ -129,5 +175,18 @@ if __name__ == "__main__":
             torch.save(vgg19.state_dict(), model_name)
             print(f"saved checkpoint: {model_name}")
 
-        with open(HISTORY_PATH, "w", encoding="utf-8") as f:
-            json.dump(history, f, indent=2)
+        save_history_json(history, HISTORY_PATH)
+        save_history_csv(history, result_dir / "history.csv")
+        save_training_curves(history, result_dir / "training_curves.png")
+        save_summary_json(
+            {
+                "epoch": epoch,
+                "best_test_acc": best_test_acc,
+                "latest_train_loss": avg_train_loss,
+                "latest_test_loss": avg_test_loss,
+                "stage": stage_name,
+                "seed": SEED,
+                "device": str(device),
+            },
+            result_dir / "summary.json",
+        )

@@ -1,81 +1,46 @@
 import torch
 import torch.nn as nn
-from torchvision import transforms
-
-
-class VGG19(nn.Module):
-    def __init__(self, num_classes=1000):
-        super(VGG19, self).__init__()
-        self.features = nn.Sequential(
-            nn.Conv2d(3, 64, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(64, 64, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(kernel_size=2, stride=2),
-            nn.Conv2d(64, 128, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(128, 128, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(kernel_size=2, stride=2),
-            nn.Conv2d(128, 256, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(256, 256, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(256, 256, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(256, 256, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(kernel_size=2, stride=2),
-            nn.Conv2d(256, 512, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(512, 512, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(512, 512, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(512, 512, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(kernel_size=2, stride=2),
-            nn.Conv2d(512, 512, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(512, 512, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(512, 512, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(512, 512, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(kernel_size=2, stride=2),
-        )
-        self.avgpool = nn.AdaptiveAvgPool2d((7, 7))
-        self.classifier = nn.Sequential(
-            nn.Linear(512 * 7 * 7, 4096),
-            nn.ReLU(inplace=True),
-            nn.Dropout(),
-            nn.Linear(4096, 4096),
-            nn.ReLU(inplace=True),
-            nn.Dropout(),
-            nn.Linear(4096, num_classes),
-        )
-
-    def forward(self, x):
-        x = self.features(x)
-        x = self.avgpool(x)
-        x = torch.flatten(x, 1)
-        x = self.classifier(x)
-        return x
+from torchvision import models, transforms
+from torchvision.models import VGG19_Weights
 
 
 class FlowerVGG19(nn.Module):
-    def __init__(self, num_classes, model_path=None):
-        super(FlowerVGG19, self).__init__()
-        self.model = VGG19()
-        if model_path:
-            weights = torch.load(model_path, map_location="cpu")
-            self.model.load_state_dict(weights)
-            for param in self.model.features.parameters():
-                param.requires_grad = False
+    def __init__(self, num_classes, model_path=None, dropout=0.5, use_pretrained=False):
+        super().__init__()
+        self.model = self._build_backbone(model_path, use_pretrained)
+        self._replace_classifier(num_classes, dropout)
 
-        num_features = self.model.classifier[-1].in_features
-        self.model.classifier[-1] = nn.Linear(num_features, num_classes)  # type: ignore[index]
+    def _build_backbone(self, model_path=None, use_pretrained=False):
+        if model_path:
+            model = models.vgg19(weights=None)
+            state_dict = torch.load(model_path, map_location="cpu")
+            model.load_state_dict(state_dict)
+            return model
+
+        if use_pretrained:
+            return models.vgg19(weights=VGG19_Weights.DEFAULT)
+
+        return models.vgg19(weights=None)
+
+    def _replace_classifier(self, num_classes, dropout):
+        in_features = self.model.classifier[-1].in_features
+        self.model.classifier[-1] = nn.Sequential(
+            nn.Dropout(p=dropout),
+            nn.Linear(in_features, num_classes),
+        )
+
+    def freeze_features(self):
+        for param in self.model.features.parameters():
+            param.requires_grad = False
+
+    def unfreeze_last_conv_block(self):
+        self.freeze_features()
+        for layer in self.model.features[28:]:
+            for param in layer.parameters():
+                param.requires_grad = True
+
+    def get_trainable_parameters(self):
+        return [param for param in self.parameters() if param.requires_grad]
 
     def forward(self, x):
         return self.model(x)
@@ -84,10 +49,10 @@ class FlowerVGG19(nn.Module):
 def build_transforms():
     train_transform = transforms.Compose(
         [
-            transforms.Resize(256),
+            transforms.RandomResizedCrop(224, scale=(0.7, 1.0)),
             transforms.RandomHorizontalFlip(),
-            transforms.RandomRotation(15),
-            transforms.CenterCrop(224),
+            transforms.RandomRotation(20),
+            transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
             transforms.ToTensor(),
             transforms.Normalize(
                 mean=[0.485, 0.456, 0.406],

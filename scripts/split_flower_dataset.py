@@ -7,7 +7,8 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
-from flower_classifier.config import ARCHIVE_DIR, TEST_DIR, TRAIN_DIR  
+from flower_classifier.config import ARCHIVE_DIR, TEST_DIR, TRAIN_DIR
+from flower_classifier.utils import set_seed
 
 
 TEST_RATIO = 0.2
@@ -47,7 +48,7 @@ def split_class_dir(class_dir: Path) -> None:
 
 
 def main() -> None:
-    random.seed(SEED)
+    set_seed(SEED)
 
     source_dir = Path(ARCHIVE_DIR)
     class_dirs = [path for path in source_dir.iterdir() if is_leaf_class_dir(path)]
