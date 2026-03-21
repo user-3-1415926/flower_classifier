@@ -33,11 +33,33 @@ class FlowerVGG19(nn.Module):
         for param in self.model.features.parameters():
             param.requires_grad = False
 
-    def unfreeze_last_conv_block(self):
+    def unfreeze_last_block(self):
+        self._unfreeze_last_n_blocks(1)
+
+    def unfreeze_last_two_blocks(self):
+        self._unfreeze_last_n_blocks(2)
+
+    def _unfreeze_last_n_blocks(self, num_blocks):
         self.freeze_features()
-        for layer in self.model.features[28:]:
-            for param in layer.parameters():
-                param.requires_grad = True
+        block_ranges = self._get_feature_block_ranges()
+        for start_idx, end_idx in block_ranges[-num_blocks:]:
+            for layer in self.model.features[start_idx:end_idx]:
+                for param in layer.parameters():
+                    param.requires_grad = True
+
+    def _get_feature_block_ranges(self):
+        block_ranges = []
+        block_start = 0
+
+        for layer_idx, layer in enumerate(self.model.features):
+            if isinstance(layer, nn.MaxPool2d):
+                block_ranges.append((block_start, layer_idx + 1))
+                block_start = layer_idx + 1
+
+        if block_start < len(self.model.features):
+            block_ranges.append((block_start, len(self.model.features)))
+
+        return block_ranges
 
     def get_trainable_parameters(self):
         return [param for param in self.parameters() if param.requires_grad]
@@ -46,10 +68,17 @@ class FlowerVGG19(nn.Module):
         return self.model(x)
 
 
+def predict_with_tta(model, inputs):
+    # A minimal and stable TTA: average logits from the original image and its mirror.
+    logits = model(inputs)
+    flipped_logits = model(torch.flip(inputs, dims=[3]))
+    return (logits + flipped_logits) / 2.0
+
+
 def build_transforms():
     train_transform = transforms.Compose(
         [
-            transforms.RandomResizedCrop(224, scale=(0.7, 1.0)),
+            transforms.RandomResizedCrop(224, scale=(0.8, 1.0)),
             transforms.RandomHorizontalFlip(),
             transforms.RandomRotation(20),
             transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),

@@ -2,21 +2,32 @@ from .config import (
     ASSETS_DIR,
     BEST_MODEL_PATH,
     CLASSIFIER_DROPOUT,
+    CONTINUE_EPOCHS,
+    CONTINUE_LR,
+    CONTINUE_MODEL_PATH,
     COCO_CAPTIONS_PATH,
+    DROPOUT,
+    EARLY_STOPPING_PATIENCE,
     HISTORY_PATH,
     IMAGENET_LABELS_PATH,
+    LABEL_SMOOTHING,
     MODEL_DIR,
     PRETRAINED_MODEL_PATH,
     SAMPLE_IMAGE_PATH,
+    SCHEDULER_FACTOR,
+    SCHEDULER_MIN_LR,
+    SCHEDULER_PATIENCE,
     STAGE1_EPOCHS,
     STAGE1_LR,
     STAGE2_EPOCHS,
     STAGE2_LR,
     TEST_DIR,
     TRAIN_DIR,
+    USE_TTA,
+    WEIGHT_DECAY,
 )
 from .imagenet_labels import load_imagenet_labels
-from .model import FlowerVGG19, build_transforms
+from .model import FlowerVGG19, build_transforms, predict_with_tta
 from .utils import (
     calculate_accuracy,
     count_correct_predictions,

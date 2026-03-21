@@ -9,8 +9,8 @@ from torchvision import datasets
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
-from flower_classifier.config import BEST_MODEL_PATH, TEST_DIR  # noqa: E402
-from flower_classifier.model import FlowerVGG19, build_transforms  # noqa: E402
+from flower_classifier.config import BEST_MODEL_PATH, DROPOUT, TEST_DIR, USE_TTA  # noqa: E402
+from flower_classifier.model import FlowerVGG19, build_transforms, predict_with_tta  # noqa: E402
 from flower_classifier.utils import get_device  # noqa: E402
 
 
@@ -30,10 +30,11 @@ if __name__ == "__main__":
     device = get_device()
 
     model_path = BEST_MODEL_PATH if os.path.exists(BEST_MODEL_PATH) else FALLBACK_MODEL_PATH
-    vgg19 = FlowerVGG19(class_num).to(device)
+    vgg19 = FlowerVGG19(class_num, dropout=DROPOUT).to(device)
     vgg19.load_state_dict(torch.load(model_path, map_location=device))
     vgg19.eval()
     print(f"loaded model = {model_path}")
+    print(f"tta = {USE_TTA}")
 
     correct = 0
     total = 0
@@ -42,7 +43,8 @@ if __name__ == "__main__":
         data = data.unsqueeze(0).to(device)
         label = torch.tensor([label], dtype=torch.long).to(device)
 
-        predict = vgg19(data).argmax(1)
+        logits = predict_with_tta(vgg19, data) if USE_TTA else vgg19(data)
+        predict = logits.argmax(1)
 
         if predict.eq(label).item():
             correct += 1

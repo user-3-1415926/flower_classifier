@@ -35,7 +35,15 @@ def save_history_csv(history: HistoryDict, save_path: str | Path) -> None:
     with save_path.open("w", encoding="utf-8", newline="") as file:
         writer = csv.DictWriter(
             file,
-            fieldnames=["epoch", "train_loss", "test_loss", "train_acc", "test_acc"],
+            fieldnames=[
+                "epoch",
+                "train_loss",
+                "test_loss",
+                "train_acc",
+                "test_acc",
+                "best_test_acc",
+                "learning_rate",
+            ],
         )
         writer.writeheader()
         writer.writerows(rows)
@@ -66,7 +74,16 @@ def _history_rows(history: HistoryDict) -> list[dict[str, float | int]]:
                 "test_loss": history["test_loss"][index],
                 "train_acc": history["train_acc"][index],
                 "test_acc": history["test_acc"][index],
+                "best_test_acc": _history_value(history, "best_test_acc", index, history["test_acc"][index]),
+                "learning_rate": _history_value(history, "learning_rate", index, ""),
             }
         )
 
     return rows
+
+
+def _history_value(history: HistoryDict, key: str, index: int, default: float | str) -> float | str:
+    values = history.get(key, [])
+    if index < len(values):
+        return values[index]
+    return default
